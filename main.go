@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"crypto/md5"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"io"
@@ -12,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"local/neute/utils"
+	"github.com/yokee99/neute/utils"
 )
 
 var (
@@ -62,6 +64,11 @@ func init() {
 
 func main() {
 	start := time.Now()
+	arg_num := len(os.Args)
+	if arg_num == 1 {
+		flag.Usage()
+		return
+	}
 
 	flag.Parse()
 	args := flag.Args()
@@ -140,6 +147,12 @@ func main() {
 	during := end.Sub(start)
 	fmt.Println(during)
 
+}
+
+func md5V(str string) string {
+	h := md5.New()
+	h.Write([]byte(str))
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 func singlework(urlc string) {
