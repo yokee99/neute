@@ -2,14 +2,13 @@ package main
 
 import (
 	"bufio"
-	"crypto/md5"
-	"encoding/hex"
 	"flag"
 	"fmt"
 	"io"
 	"math/rand"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -21,11 +20,10 @@ var (
 	/*
 	 *参数列表
 	 */
-	count   int
-	wg      sync.WaitGroup
-	urllist []string
-	// singleurl  string
-	FileName   string
+	count      int
+	wg         sync.WaitGroup
+	urllist    []string
+	fileName   string
 	concurrent int
 	timeout    int
 	h          bool
@@ -33,17 +31,16 @@ var (
 	blockcount int
 	finished   int
 	failurl    []string
-	failurl_t  []string
-	// del_ch     = make(chan string, concurrent)
+	failurlT   []string
+	privateKey string
 )
 
 func init() {
 	blockcount = 0
-	// flag.StringVar(&singleurl, "u", "", "for url")
-	flag.StringVar(&FileName, "c", "", " path  of your URLLIST")
+	flag.StringVar(&fileName, "c", "", " path  of your URLLIST")
 	flag.IntVar(&concurrent, "k", 1, "concurrent")
 	flag.IntVar(&timeout, "t", 15, "timeout ")
-
+	flag.StringVar(&privateKey, "K", "", "privateKey")
 	flag.Usage = usage
 
 	k := utils.Exist("blocklist")
@@ -64,11 +61,6 @@ func init() {
 
 func main() {
 	start := time.Now()
-	arg_num := len(os.Args)
-	if arg_num == 1 {
-		flag.Usage()
-		return
-	}
 
 	flag.Parse()
 	args := flag.Args()
@@ -77,23 +69,19 @@ func main() {
 		return
 	}
 
-	if FileName != "" {
-		fileName := FileName
+	if fileName != "" {
+		fileName := fileName
 		file, err := os.Open(fileName)
-
 		if err != nil {
 			fmt.Printf("Error: %s\n", err)
 			return
 		}
 		defer file.Close()
-
-		ch = make(chan int, concurrent)
-
+		ch = make(chan int, concurrent) /*创建通道（多线程）*/
 		fd := bufio.NewReader(file)
 		count = 0
 		for {
 			line, err := fd.ReadString('\n')
-			//fmt.Printf(line)
 			if err != nil {
 				if err == io.EOF { //读取结束，会报EOF
 					fmt.Println("Read done!")
@@ -104,7 +92,6 @@ func main() {
 			line = strings.Replace(line, "\n", "", -1)
 			line = strings.Replace(line, "\r", "", -1)
 			urllist = append(urllist, line)
-
 			count++
 
 		}
@@ -112,47 +99,61 @@ func main() {
 
 		for i := 0; i < count; i++ {
 			wg.Add(1)
-			// fmt.Printf("exe line :%d\n", i)
 			str := "[" + bar((i*10)/count, 10) + "] "
 			fmt.Printf("\r%s  %.1f %%  exe: %d finished: %d/%d  block: %d ", str, float32(i)/float32(count)*100, i, finished, count, blockcount)
 			ch <- 1
 			urlc := urllist[i]
-			go work(urlc)
-
-			// go del_buff()
+			if privateKey != "" {
+				testurl1 := urlc
+				urlpath := utils.GetPathInURL(testurl1)
+				NowTimestamp := time.Now().Unix()
+				EndTimestamp := NowTimestamp + 3600
+				sstring := urlpath + "-" + strconv.FormatInt(EndTimestamp, 10) + "-0-0-" + privateKey
+				md5str := utils.Md5V(sstring)
+				ssurl := urlc + "?auth_key=" + strconv.FormatInt(EndTimestamp, 10) + "-0-0-" + md5str
+				go work(ssurl)
+			} else {
+				go work(urlc)
+			}
 
 		}
+
+		failurlT = failurl
+		wg.Wait()
+		str := "[" + bar((10), 10) + "] "
+		fmt.Printf("\r%s  %.1f %%  exe: %d finished: %d/%d  block: %d ", str, float32(count)/float32(count)*100, count, finished, count, blockcount)
+		fmt.Printf("\r\nDone!")
+		fmt.Println()
 
 	} else {
 		if len(args) < 1 {
 			fmt.Println("Too few arguments")
 			fmt.Println("Usage: neute  [args] URLs...")
 			flag.PrintDefaults()
-		} else {
+
+		} else if len(args) == 1 {
 			wg.Add(1)
-			singlework(flag.Arg(0))
+
+			if privateKey != "" {
+				testurl1 := flag.Arg(0)
+				urlpath := utils.GetPathInURL(testurl1)
+				NowTimestamp := time.Now().Unix()
+				EndTimestamp := NowTimestamp + 3600
+				sstring := urlpath + "-" + strconv.FormatInt(EndTimestamp, 10) + "-0-0-" + privateKey
+				md5str := utils.Md5V(sstring)
+				ssurl := flag.Arg(0) + "?auth_key=" + strconv.FormatInt(EndTimestamp, 10) + "-0-0-" + md5str
+				singlework(ssurl)
+			} else {
+				singlework(flag.Arg(0))
+			}
+
 		}
 	}
 
-	failurl_t = failurl
-	//
-
-	// fileName := os.Args[1]
-	wg.Wait()
-	str := "[" + bar((10), 10) + "] "
-	fmt.Printf("\r%s  %.1f %%  exe: %d finished: %d/%d  block: %d ", str, float32(count)/float32(count)*100, count, finished, count, blockcount)
-	fmt.Printf("\r\nDone!")
-	fmt.Println()
 	end := time.Now()
 	during := end.Sub(start)
 	fmt.Println(during)
 
-}
-
-func md5V(str string) string {
-	h := md5.New()
-	h.Write([]byte(str))
-	return hex.EncodeToString(h.Sum(nil))
 }
 
 func singlework(urlc string) {
@@ -160,30 +161,15 @@ func singlework(urlc string) {
 	defer wg.Done()
 	num := rand.Int31n(1)
 	time.Sleep(time.Duration(num) * time.Second)
-	// fmt.Printf(urlc)
-	// resp, err := http.Get(urlc)
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// defer resp.Body.Close()
-	// resCode := resp.StatusCode
-	// fmt.Printf("%d\r\n", resCode)
-	// for k, v := range resp.Header {
-	// 	fmt.Printf(k)
-	// 	fmt.Printf(" : ")
-	// 	fmt.Println(v)
-	// }
 
 	filename, ext, err := utils.GetNameAndExt(urlc)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "log message: %s", err)
 		return
 	}
-	// fmt.Println("downloading：" + filename + "." + ext)
-	path_pre := "./video_tmp/"
-	path := path_pre + filename + "." + ext + ".tmp"
-	// fmt.Println("将要保存到：" + path)
-	Downloadpro(urlc, path)
+	pathPre := "./video_tmp/"
+	path := pathPre + filename + "." + ext + ".tmp"
+	downloadPro(urlc, path)
 
 }
 func work(urlc string) {
@@ -191,36 +177,20 @@ func work(urlc string) {
 	defer wg.Done()
 	num := rand.Int31n(1)
 	time.Sleep(time.Duration(num) * time.Second)
-	// fmt.Printf(urlc)
-	// resp, err := http.Get(urlc)
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// defer resp.Body.Close()
-	// resCode := resp.StatusCode
-	// fmt.Printf("%d\r\n", resCode)
-	// for k, v := range resp.Header {
-	// 	fmt.Printf(k)
-	// 	fmt.Printf(" : ")
-	// 	fmt.Println(v)
-	// }
 
 	filename, ext, err := utils.GetNameAndExt(urlc)
 	if err != nil {
-		// fmt.Println("ERROR CODE: #0")
 		fmt.Fprintf(os.Stderr, "log message: #1%s", err)
 		return
 	}
-	// fmt.Println("你要下载的文件是：" + filename + "." + ext)
-	path_pre := "./video_tmp/"
-	path := path_pre + filename + "." + ext + ".tmp"
-	// fmt.Println("将要保存到：" + path)
-	Downloadpro(urlc, path)
+	pathPre := "./video_tmp/"
+	path := pathPre + filename + "." + ext + ".tmp"
+	downloadPro(urlc, path)
 	<-ch
 
 }
 
-func Downloadpro(url string, path string) {
+func downloadPro(url string, path string) {
 	chx := make(chan string)
 	go func() {
 		out, err := os.Create(path)
@@ -250,20 +220,6 @@ func Downloadpro(url string, path string) {
 
 		resCode := resp.StatusCode
 		if resCode == 200 {
-			// fmt.Printf("%d\r\n", resCode)
-			// for k, v := range resp.Header {
-			// 	fmt.Printf(k)
-			// 	fmt.Printf(" : ")
-			// 	fmt.Println(v)
-			// }
-			// h := resp.Header
-			// if err != nil {
-			// 	panic(err)
-			// }
-			// s := h.Get("Content-Length")
-			// fmt.Printf("size:")
-
-			// fmt.Println(s)
 
 			_, err = io.Copy(out, resp.Body)
 			if err != nil {
@@ -271,15 +227,14 @@ func Downloadpro(url string, path string) {
 				if err == io.ErrUnexpectedEOF { //读取结束，会报EOF
 					fmt.Fprintf(os.Stderr, "log message: #5 %s", url[0:72])
 					return
-				} else {
-					fmt.Fprintf(os.Stderr, "log message: #5 %s", err)
-					return
 				}
+				fmt.Fprintf(os.Stderr, "log message: #5 %s", err)
+				return
 
 			}
 
 		} else {
-			// fmt.Printf("%s\nCode:%d\r\n", url, resCode)
+
 			blockcount++
 			err := utils.AppendToFile("blocklist", url+"\n")
 			fmt.Fprintf(os.Stderr, "log message: #%d %s", resCode, url[0:72])
@@ -288,8 +243,6 @@ func Downloadpro(url string, path string) {
 				fmt.Fprintf(os.Stderr, "log message: #6 %s", err)
 				return
 			}
-			// fmt.Printf(" ------Writed into file----")
-
 		}
 
 		chx <- ":)"

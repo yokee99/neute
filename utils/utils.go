@@ -1,17 +1,28 @@
 package utils
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"fmt"
 	"net/url"
 	"os"
 	"strings"
 )
 
+//Exist Exist
 func Exist(filename string) bool {
 	_, err := os.Stat(filename)
 	return err == nil || os.IsExist(err)
 }
 
+//Md5V md5V
+func Md5V(str string) string {
+	h := md5.New()
+	h.Write([]byte(str))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+//GetNameAndExt 获取文件名和后缀
 func GetNameAndExt(uri string) (string, string, error) {
 	/*
 	*获取文件名和后缀
@@ -28,6 +39,16 @@ func GetNameAndExt(uri string) (string, string, error) {
 	return filename[0], ".dowload", nil
 }
 
+//GetPathInURL GetPathInURL
+func GetPathInURL(uri string) string {
+	u, err := url.Parse(uri)
+	if err != nil {
+		panic(err)
+	}
+	return u.Path
+}
+
+//AppendToFile AppendToFile
 func AppendToFile(fileName string, content string) error {
 
 	/*
