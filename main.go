@@ -20,23 +20,26 @@ var (
 	/*
 	 *参数列表
 	 */
-	count      int
-	wg         sync.WaitGroup
-	urllist    []string
-	fileName   string
-	concurrent int
-	timeout    int
-	h          bool
-	ch         chan int
-	blockcount int
-	finished   int
-	failurl    []string
-	failurlT   []string
-	privateKey string
+	count            int
+	wg               sync.WaitGroup
+	urllist          []string
+	fileName         string
+	concurrent       int
+	timeout          int
+	h                bool
+	dontdownloadflag bool
+	ch               chan int
+	blockcount       int
+	finished         int
+	currentLine      int
+	failurl          []string
+	failurlT         []string
+	privateKey       string // ali private Key
 )
 
 func init() {
 	blockcount = 0
+	flag.BoolVar(&dontdownloadflag, "d", false, "Don't download")
 	flag.StringVar(&fileName, "c", "", " path  of your URLLIST")
 	flag.IntVar(&concurrent, "k", 1, "concurrent")
 	flag.IntVar(&timeout, "t", 15, "timeout ")
@@ -47,7 +50,6 @@ func init() {
 	d := utils.Exist("video_tmp")
 	if k != true {
 		file, err := os.Create("blocklist")
-
 		if err != nil {
 			fmt.Println(err)
 		}
@@ -56,19 +58,16 @@ func init() {
 	if d != true {
 		os.Mkdir("./video_tmp", 0777)
 	}
-
 }
 
 func main() {
 	start := time.Now()
-
 	flag.Parse()
 	args := flag.Args()
 	if h {
 		flag.Usage()
 		return
 	}
-
 	if fileName != "" {
 		fileName := fileName
 		file, err := os.Open(fileName)
@@ -125,7 +124,7 @@ func main() {
 		fmt.Printf("\r\nDone!")
 		fmt.Println()
 
-	} else {
+	} else { // 无 -c 参数
 		if len(args) < 1 {
 			fmt.Println("Too few arguments")
 			fmt.Println("Usage: neute  [args] URLs...")
@@ -173,7 +172,6 @@ func singlework(urlc string) {
 
 }
 func work(urlc string) {
-
 	defer wg.Done()
 	num := rand.Int31n(1)
 	time.Sleep(time.Duration(num) * time.Second)
@@ -191,79 +189,77 @@ func work(urlc string) {
 }
 
 func downloadPro(url string, path string) {
+	var (
+		retries = 3
+		resp    *http.Response
+	)
+
 	chx := make(chan string)
 	go func() {
 		out, err := os.Create(path)
-
 		if err != nil {
-			// fmt.Println("ERROR CODE: #1")
-			fmt.Fprintf(os.Stderr, "log message: #2%s", err)
+			fmt.Fprintf(os.Stderr, "log message: create path%s", err)
 			return
 		}
 		defer out.Close()
 
-		resp, err := http.Get(url)
-		if err != nil {
-			// fmt.Println("ERROR CODE: #2")
-			fmt.Fprintf(os.Stderr, "log message: #3")
-			time.Sleep(3 * time.Second)
+		for retries > 0 {
 			resp, err = http.Get(url)
-
 			if err != nil {
-				// fmt.Println("ERROR CODE: #11")
-				fmt.Fprintf(os.Stderr, "log message:#33 %s", url[0:72])
-				failurl = append(failurl, url)
-				return
+				fmt.Fprintf(os.Stderr, "log message: connect error retring %d \n", retries)
+				time.Sleep(3 * time.Second)
+				retries--
+			} else {
+				break
 			}
-			defer resp.Body.Close()
 		}
+		if resp != nil {
+			defer resp.Body.Close()
+			resCode := resp.StatusCode
+			if resCode == 200 {
 
-		resCode := resp.StatusCode
-		if resCode == 200 {
+				if !dontdownloadflag {
+					_, err = io.Copy(out, resp.Body)
+					if err != nil {
+						// fmt.Println("ERROR CODE: #3")
+						if err == io.ErrUnexpectedEOF { //读取结束，会报EOF
+							fmt.Fprintf(os.Stderr, "log message: #5 %s", url[0:72])
+							return
+						}
+						fmt.Fprintf(os.Stderr, "log message: #5 %s", err)
+						return
+					}
 
-			_, err = io.Copy(out, resp.Body)
-			if err != nil {
-				// fmt.Println("ERROR CODE: #3")
-				if err == io.ErrUnexpectedEOF { //读取结束，会报EOF
-					fmt.Fprintf(os.Stderr, "log message: #5 %s", url[0:72])
+				}
+
+			} else {
+				blockcount++
+				err := utils.AppendToFile("blocklist", url+"\n")
+				fmt.Fprintf(os.Stderr, "log message: #%d %s", resCode, url[0:72])
+				if err != nil {
+					// fmt.Println("ERROR CODE: #4")
+					fmt.Fprintf(os.Stderr, "log message: #6 %s", err)
 					return
 				}
-				fmt.Fprintf(os.Stderr, "log message: #5 %s", err)
-				return
-
 			}
-
 		} else {
-
-			blockcount++
-			err := utils.AppendToFile("blocklist", url+"\n")
-			fmt.Fprintf(os.Stderr, "log message: #%d %s", resCode, url[0:72])
-			if err != nil {
-				// fmt.Println("ERROR CODE: #4")
-				fmt.Fprintf(os.Stderr, "log message: #6 %s", err)
-				return
-			}
+			failurl = append(failurl, url)
 		}
 
 		chx <- ":)"
 
 	}()
-
 	select {
 	case res := <-chx:
 		fmt.Printf("%s", res)
 	case <-time.After(time.Second * time.Duration(timeout)):
-		// fmt.Println(path + " done!")
 		finished++
-		// del_ch <- path
-		// fmt.Println("del done!")
-
 	}
 
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, ` version: 1.0.0.1
+	fmt.Fprintf(os.Stderr, ` version: 1.0.1.0
 	Usage: neute  [opts][args] URLs...
 
 Options:
@@ -272,7 +268,9 @@ Options:
 	fmt.Println(`
 Examples:
 	neute -c YOURFILEPATH -k 5 -t 30 
-	(URL list is "YOURFILEPATH"  concurrent is 5 , download 30s! )`)
+	(URL list is "YOURFILEPATH"  concurrent is 5 , download 30s! )
+	neute -d -c YOURFILEPATH -k 10 
+	(Just cheack URL without download!)`)
 }
 
 func bar(count, size int) string {
@@ -287,11 +285,7 @@ func bar(count, size int) string {
 	return str
 }
 
-// func del_buff() {
-// 	del_path := <-del_ch
-// 	err := os.RemoveAll(del_path)
-// 	if err != nil {
-// 		fmt.Println(err)
-// 	}
-
-// }
+func move(line int) {
+	fmt.Printf("\033[%dA\033[%dB", currentLine, line)
+	currentLine = line
+}
