@@ -31,7 +31,6 @@ var (
 	ch               chan int
 	blockcount       int
 	finished         int
-	currentLine      int
 	failurl          []string
 	failurlT         []string
 	privateKey       string // ali private Key
@@ -98,7 +97,7 @@ func main() {
 
 		for i := 0; i < count; i++ {
 			wg.Add(1)
-			str := "[" + bar((i*10)/count, 10) + "] "
+			str := "[" + utils.Bar((i*10)/count, 10) + "] "
 			fmt.Printf("\r%s  %.1f %%  exe: %d finished: %d/%d  block: %d ", str, float32(i)/float32(count)*100, i, finished, count, blockcount)
 			ch <- 1
 			urlc := urllist[i]
@@ -119,7 +118,7 @@ func main() {
 
 		failurlT = failurl
 		wg.Wait()
-		str := "[" + bar((10), 10) + "] "
+		str := "[" + utils.Bar((10), 10) + "] "
 		fmt.Printf("\r%s  %.1f %%  exe: %d finished: %d/%d  block: %d ", str, float32(count)/float32(count)*100, count, finished, count, blockcount)
 		fmt.Printf("\r\nDone!")
 		fmt.Println()
@@ -141,6 +140,7 @@ func main() {
 				sstring := urlpath + "-" + strconv.FormatInt(EndTimestamp, 10) + "-0-0-" + privateKey
 				md5str := utils.Md5V(sstring)
 				ssurl := flag.Arg(0) + "?auth_key=" + strconv.FormatInt(EndTimestamp, 10) + "-0-0-" + md5str
+				fmt.Println(ssurl)
 				singlework(ssurl)
 			} else {
 				singlework(flag.Arg(0))
@@ -221,7 +221,6 @@ func downloadPro(url string, path string) {
 				if !dontdownloadflag {
 					_, err = io.Copy(out, resp.Body)
 					if err != nil {
-						// fmt.Println("ERROR CODE: #3")
 						if err == io.ErrUnexpectedEOF { //读取结束，会报EOF
 							fmt.Fprintf(os.Stderr, "log message: #5 %s", url[0:72])
 							return
@@ -259,7 +258,7 @@ func downloadPro(url string, path string) {
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, ` version: 1.0.1.0
+	fmt.Fprintf(os.Stderr, ` version: 1.0.1.1
 	Usage: neute  [opts][args] URLs...
 
 Options:
@@ -271,21 +270,4 @@ Examples:
 	(URL list is "YOURFILEPATH"  concurrent is 5 , download 30s! )
 	neute -d -c YOURFILEPATH -k 10 
 	(Just cheack URL without download!)`)
-}
-
-func bar(count, size int) string {
-	str := ""
-	for i := 0; i < size; i++ {
-		if i < count {
-			str += "#"
-		} else {
-			str += " "
-		}
-	}
-	return str
-}
-
-func move(line int) {
-	fmt.Printf("\033[%dA\033[%dB", currentLine, line)
-	currentLine = line
 }
