@@ -98,7 +98,7 @@ func main() {
 		for i := 0; i < count; i++ {
 			wg.Add(1)
 			str := "[" + utils.Bar((i*10)/count, 10) + "] "
-			fmt.Printf("\r%s  %.1f %%  exe: %d finished: %d/%d  block: %d ", str, float32(i)/float32(count)*100, i, finished, count, blockcount)
+			fmt.Printf("\r%s  %.1f %%  exe: %d finished: %d/%d  block: %d msg:", str, float32(i)/float32(count)*100, i, finished, count, blockcount)
 			ch <- 1
 			urlc := urllist[i]
 			if privateKey != "" {
@@ -120,15 +120,14 @@ func main() {
 		wg.Wait()
 		str := "[" + utils.Bar((10), 10) + "] "
 		fmt.Printf("\r%s  %.1f %%  exe: %d finished: %d/%d  block: %d ", str, float32(count)/float32(count)*100, count, finished, count, blockcount)
-		fmt.Printf("\r\nDone!")
+		fmt.Printf(utils.SuccessString("\r\nDone!"))
 		fmt.Println()
 
 	} else { // 无 -c 参数
 		if len(args) < 1 {
-			fmt.Println("Too few arguments")
+			fmt.Println(utils.ErrorString("Too few arguments"))
 			fmt.Println("Usage: neute  [args] URLs...")
 			flag.PrintDefaults()
-
 		} else if len(args) == 1 {
 			wg.Add(1)
 
@@ -140,7 +139,7 @@ func main() {
 				sstring := urlpath + "-" + strconv.FormatInt(EndTimestamp, 10) + "-0-0-" + privateKey
 				md5str := utils.Md5V(sstring)
 				ssurl := flag.Arg(0) + "?auth_key=" + strconv.FormatInt(EndTimestamp, 10) + "-0-0-" + md5str
-				fmt.Println(ssurl)
+				fmt.Println(utils.SuccessString(ssurl))
 				singlework(ssurl)
 			} else {
 				singlework(flag.Arg(0))
@@ -169,6 +168,7 @@ func singlework(urlc string) {
 	pathPre := "./video_tmp/"
 	path := pathPre + filename + "." + ext + ".tmp"
 	downloadPro(urlc, path)
+	fmt.Println()
 
 }
 func work(urlc string) {
@@ -217,9 +217,23 @@ func downloadPro(url string, path string) {
 			defer resp.Body.Close()
 			resCode := resp.StatusCode
 			if resCode == 200 {
+				contentLength := resp.ContentLength
+				if contentLength < 512 {
+					blockcount++
+					err := utils.AppendToFile("blocklist", url+"\n")
+					fmt.Fprintf(os.Stderr, "log message: #Too short %s", url[0:72])
+					if err != nil {
+						// fmt.Println("ERROR CODE: #4")
+						fmt.Fprintf(os.Stderr, "log message: #6 %s", err)
+						return
+					}
+				}
+				scontentLength := utils.ByteCountIEC(contentLength)
+				fmt.Fprintf(os.Stdout, utils.InfoString("ContentLength:%s"), scontentLength)
 
 				if !dontdownloadflag {
 					_, err = io.Copy(out, resp.Body)
+
 					if err != nil {
 						if err == io.ErrUnexpectedEOF { //读取结束，会报EOF
 							fmt.Fprintf(os.Stderr, "log message: #5 %s", url[0:72])
@@ -245,7 +259,7 @@ func downloadPro(url string, path string) {
 			failurl = append(failurl, url)
 		}
 
-		chx <- ":)"
+		chx <- "**"
 
 	}()
 	select {
