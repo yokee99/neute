@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/yokee99/neute/mp4utils"
 	"github.com/yokee99/neute/utils"
 )
 
@@ -25,6 +26,7 @@ var (
 	urllist          []string
 	fileName         string
 	concurrent       int
+	mp4FrameCut      int
 	timeout          int
 	h                bool
 	dontdownloadflag bool
@@ -39,6 +41,7 @@ var (
 func init() {
 	blockcount = 0
 	flag.BoolVar(&dontdownloadflag, "d", false, "Don't download")
+	flag.IntVar(&mp4FrameCut, "f", 0, "frame cut duration , 0 = off")
 	flag.StringVar(&fileName, "c", "", " path  of your URLLIST")
 	flag.IntVar(&concurrent, "k", 1, "concurrent")
 	flag.IntVar(&timeout, "t", 15, "timeout ")
@@ -109,9 +112,18 @@ func main() {
 				sstring := urlpath + "-" + strconv.FormatInt(EndTimestamp, 10) + "-0-0-" + privateKey
 				md5str := utils.Md5V(sstring)
 				ssurl := urlc + "?auth_key=" + strconv.FormatInt(EndTimestamp, 10) + "-0-0-" + md5str
-				go work(ssurl)
+				if mp4FrameCut == 0 {
+					go work(ssurl)
+				} else {
+					fmt.Println("mp4FrameCut")
+				}
 			} else {
-				go work(urlc)
+				if mp4FrameCut == 0 {
+					go work(urlc)
+				} else {
+					go mp4work(urlc)
+				}
+
 			}
 
 		}
@@ -171,6 +183,17 @@ func singlework(urlc string) {
 	fmt.Println()
 
 }
+
+func mp4work(urlc string) {
+	defer wg.Done()
+	_, err := mp4utils.GenerateLength("ffprobe", urlc)
+	if err != nil {
+		fmt.Println("bad")
+		fmt.Println(err)
+	}
+	<-ch
+}
+
 func work(urlc string) {
 	defer wg.Done()
 	num := rand.Int31n(1)
